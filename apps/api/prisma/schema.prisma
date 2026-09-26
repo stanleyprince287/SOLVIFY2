@@ -1,0 +1,476 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─────────────────────────── ENUMS ───────────────────────────
+
+enum Role {
+  CUSTOMER
+  PROFESSIONAL
+  ADMIN
+}
+
+enum AccountStatus {
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum RecordStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VerificationStatus {
+  UNSUBMITTED
+  PENDING
+  APPROVED
+  REJECTED
+  RESUBMISSION_REQUESTED
+}
+
+enum VerificationType {
+  ID_DOCUMENT
+  BUSINESS_REGISTRATION
+  CERTIFICATION
+  ADDRESS_PROOF
+}
+
+enum RequestStatus {
+  REQUESTED
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum InvitationStatus {
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  CLOSED
+}
+
+enum JobStatus {
+  ACCEPTED
+  IN_PROGRESS
+  COMPLETED
+  REVIEWED
+  CANCELLED
+}
+
+enum ReviewModeration {
+  VISIBLE
+  HIDDEN
+}
+
+enum ReportStatus {
+  OPEN
+  UNDER_REVIEW
+  RESOLVED
+  DISMISSED
+}
+
+enum NotificationType {
+  REQUEST_RECEIVED
+  REQUEST_ACCEPTED
+  REQUEST_REJECTED
+  JOB_STATUS_CHANGED
+  JOB_COMPLETED
+  REVIEW_RECEIVED
+  REVIEW_REQUESTED
+  VERIFICATION_APPROVED
+  VERIFICATION_REJECTED
+  VERIFICATION_RESUBMISSION
+  REPORT_UPDATE
+}
+
+// ─────────────────────────── IDENTITY ───────────────────────────
+
+model User {
+  id            String        @id @default(uuid()) @db.Uuid
+  fullName      String        @map("full_name")
+  email         String        @unique
+  phone         String        @unique
+  passwordHash  String        @map("password_hash")
+  role          Role
+  accountStatus AccountStatus @default(ACTIVE) @map("account_status")
+  emailVerified Boolean       @default(false) @map("email_verified")
+  phoneVerified Boolean       @default(false) @map("phone_verified")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  customerProfile     CustomerProfile?
+  professionalProfile ProfessionalProfile?
+  refreshTokens       RefreshToken[]
+  notifications       Notification[]
+  auditLogs           AdminAuditLog[]
+  reportsMade         Report[]          @relation("ReportedBy")
+  reportsAgainst      Report[]          @relation("ReportedUser")
+
+  @@index([role, accountStatus])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model AdminAuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String   @map("actor_id") @db.Uuid
+  action     String
+  entityType String   @map("entity_type")
+  entityId   String?  @map("entity_id")
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor User @relation(fields: [actorId], references: [id])
+
+  @@index([actorId, createdAt])
+  @@map("admin_audit_logs")
+}
+
+// ─────────────────────────── PROFILES ───────────────────────────
+
+model CustomerProfile {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @unique @map("user_id") @db.Uuid
+  profilePhoto      String?  @map("profile_photo")
+  defaultLocationId String?  @map("default_location_id") @db.Uuid
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultLocation Location? @relation(fields: [defaultLocationId], references: [id])
+
+  requests ServiceRequest[]
+  jobs     Job[]
+  reviews  Review[]
+
+  @@map("customer_profiles")
+}
+
+model ProfessionalProfile {
+  id                 String             @id @default(uuid()) @db.Uuid
+  userId             String             @unique @map("user_id") @db.Uuid
+  displayName        String             @map("display_name")
+  businessName       String?            @map("business_name")
+  bio                String?
+  experienceYears    Int                @default(0) @map("experience_years")
+  profilePhoto       String?            @map("profile_photo")
+  mainLocationId     String?            @map("main_location_id") @db.Uuid
+  verificationStatus VerificationStatus @default(UNSUBMITTED) @map("verification_status")
+  verificationDate   DateTime?          @map("verification_date")
+  averageRating      Decimal            @default(0) @db.Decimal(3, 2) @map("average_rating")
+  reviewCount        Int                @default(0) @map("review_count")
+  completedJobsCount Int                @default(0) @map("completed_jobs_count")
+  isSearchable       Boolean            @default(false) @map("is_searchable")
+  createdAt          DateTime           @default(now()) @map("created_at")
+  updatedAt          DateTime           @updatedAt @map("updated_at")
+
+  user           User                     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  mainLocation   Location?                @relation("MainLocation", fields: [mainLocationId], references: [id])
+  services       ProfessionalService[]
+  serviceAreas   ProfessionalServiceArea[]
+  portfolioItems PortfolioItem[]
+  verifications  ProfessionalVerification[]
+  invitations    RequestProfessional[]
+  jobs           Job[]
+  reviews        Review[]
+
+  @@index([verificationStatus, isSearchable])
+  @@index([averageRating])
+  @@map("professional_profiles")
+}
+
+// ─────────────────────────── CATALOG ───────────────────────────
+
+model ServiceCategory {
+  id          String       @id @default(uuid()) @db.Uuid
+  name        String       @unique
+  description String?
+  icon        String?
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  services Service[]
+
+  @@map("service_categories")
+}
+
+model Service {
+  id          String       @id @default(uuid()) @db.Uuid
+  categoryId  String       @map("category_id") @db.Uuid
+  name        String
+  description String?
+  status      RecordStatus @default(ACTIVE)
+  createdAt   DateTime     @default(now()) @map("created_at")
+
+  category      ServiceCategory       @relation(fields: [categoryId], references: [id])
+  professionals ProfessionalService[]
+  requests      ServiceRequest[]
+
+  @@unique([categoryId, name])
+  @@index([name])
+  @@map("services")
+}
+
+model ProfessionalService {
+  id            String   @id @default(uuid()) @db.Uuid
+  professionalId String  @map("professional_id") @db.Uuid
+  serviceId     String   @map("service_id") @db.Uuid
+  startingPrice Decimal? @map("starting_price") @db.Decimal(12, 2)
+  description   String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  service      Service             @relation(fields: [serviceId], references: [id])
+
+  @@unique([professionalId, serviceId])
+  @@index([serviceId])
+  @@map("professional_services")
+}
+
+// ─────────────────────────── LOCATIONS ───────────────────────────
+
+model Location {
+  id        String   @id @default(uuid()) @db.Uuid
+  country   String
+  state     String
+  city      String
+  area      String   @default("")
+  latitude  Decimal? @db.Decimal(9, 6)
+  longitude Decimal? @db.Decimal(9, 6)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  customerProfiles        CustomerProfile[]
+  professionalMainFor     ProfessionalProfile[] @relation("MainLocation")
+  professionalServiceAreas ProfessionalServiceArea[]
+  serviceRequests         ServiceRequest[]
+
+  @@unique([country, state, city, area])
+  @@index([city])
+  @@index([state])
+  @@map("locations")
+}
+
+model ProfessionalServiceArea {
+  id             String   @id @default(uuid()) @db.Uuid
+  professionalId String   @map("professional_id") @db.Uuid
+  locationId     String   @map("location_id") @db.Uuid
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+  location     Location            @relation(fields: [locationId], references: [id])
+
+  @@unique([professionalId, locationId])
+  @@index([locationId])
+  @@map("professional_service_areas")
+}
+
+// ─────────────────────────── PORTFOLIO ───────────────────────────
+
+model PortfolioItem {
+  id             String   @id @default(uuid()) @db.Uuid
+  professionalId String   @map("professional_id") @db.Uuid
+  title          String
+  description    String?
+  imageKey       String   @map("image_key")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId])
+  @@map("portfolio_items")
+}
+
+// ─────────────────────────── REQUESTS ───────────────────────────
+
+model ServiceRequest {
+  id            String        @id @default(uuid()) @db.Uuid
+  customerId    String        @map("customer_id") @db.Uuid
+  serviceId     String        @map("service_id") @db.Uuid
+  description   String
+  locationId    String        @map("location_id") @db.Uuid
+  preferredDate DateTime      @map("preferred_date") @db.Date
+  preferredTime String        @map("preferred_time")
+  budgetMin     Decimal?      @map("budget_min") @db.Decimal(12, 2)
+  budgetMax     Decimal?      @map("budget_max") @db.Decimal(12, 2)
+  status        RequestStatus @default(REQUESTED)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  customer    CustomerProfile       @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  service     Service               @relation(fields: [serviceId], references: [id])
+  location    Location              @relation(fields: [locationId], references: [id])
+  attachments RequestAttachment[]
+  invitations RequestProfessional[]
+  job         Job?
+
+  @@index([customerId, status])
+  @@index([status, createdAt])
+  @@map("service_requests")
+}
+
+model RequestAttachment {
+  id         String   @id @default(uuid()) @db.Uuid
+  requestId  String   @map("request_id") @db.Uuid
+  fileKey    String   @map("file_key")
+  fileType   String   @map("file_type")
+  uploadedAt DateTime @default(now()) @map("uploaded_at")
+
+  request ServiceRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+  @@map("request_attachments")
+}
+
+model RequestProfessional {
+  id             String           @id @default(uuid()) @db.Uuid
+  requestId      String           @map("request_id") @db.Uuid
+  professionalId String           @map("professional_id") @db.Uuid
+  status         InvitationStatus @default(SENT)
+  responseAt     DateTime?        @map("response_at")
+  createdAt      DateTime         @default(now()) @map("created_at")
+
+  request      ServiceRequest     @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@unique([requestId, professionalId])
+  @@index([professionalId, status])
+  @@map("request_professionals")
+}
+
+// ─────────────────────────── JOBS ───────────────────────────
+
+model Job {
+  id             String    @id @default(uuid()) @db.Uuid
+  requestId      String    @unique @map("request_id") @db.Uuid
+  customerId     String    @map("customer_id") @db.Uuid
+  professionalId String    @map("professional_id") @db.Uuid
+  status         JobStatus @default(ACCEPTED)
+  startedAt      DateTime? @map("started_at")
+  completedAt    DateTime? @map("completed_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+
+  request      ServiceRequest      @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  customer     CustomerProfile     @relation(fields: [customerId], references: [id])
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id])
+  history      JobStatusHistory[]
+  review       Review?
+  reports      Report[]
+
+  @@index([customerId, status])
+  @@index([professionalId, status])
+  @@map("jobs")
+}
+
+model JobStatusHistory {
+  id        String    @id @default(uuid()) @db.Uuid
+  jobId     String    @map("job_id") @db.Uuid
+  status    JobStatus
+  changedBy String    @map("changed_by") @db.Uuid
+  changedAt DateTime  @default(now()) @map("changed_at")
+  note      String?
+
+  job Job @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, changedAt])
+  @@map("job_status_history")
+}
+
+// ─────────────────────────── REVIEWS ───────────────────────────
+
+model Review {
+  id               String           @id @default(uuid()) @db.Uuid
+  jobId            String           @unique @map("job_id") @db.Uuid
+  customerId       String           @map("customer_id") @db.Uuid
+  professionalId   String           @map("professional_id") @db.Uuid
+  rating           Int
+  comment          String?
+  moderationStatus ReviewModeration @default(VISIBLE) @map("moderation_status")
+  createdAt        DateTime         @default(now()) @map("created_at")
+
+  job          Job                 @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  customer     CustomerProfile     @relation(fields: [customerId], references: [id])
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id])
+
+  @@index([professionalId, moderationStatus])
+  @@map("reviews")
+}
+
+// ─────────────────────────── VERIFICATION ───────────────────────────
+
+model ProfessionalVerification {
+  id               String             @id @default(uuid()) @db.Uuid
+  professionalId   String             @map("professional_id") @db.Uuid
+  verificationType VerificationType   @map("verification_type")
+  documentKey      String             @map("document_key")
+  status           VerificationStatus @default(PENDING)
+  reviewedBy       String?            @map("reviewed_by") @db.Uuid
+  reviewedAt       DateTime?          @map("reviewed_at")
+  rejectionReason  String?            @map("rejection_reason")
+  createdAt        DateTime           @default(now()) @map("created_at")
+
+  professional ProfessionalProfile @relation(fields: [professionalId], references: [id], onDelete: Cascade)
+
+  @@index([professionalId, status])
+  @@index([status, createdAt])
+  @@map("professional_verifications")
+}
+
+// ─────────────────────────── SAFETY ───────────────────────────
+
+model Report {
+  id             String       @id @default(uuid()) @db.Uuid
+  reportedBy     String       @map("reported_by") @db.Uuid
+  reportedUserId String       @map("reported_user_id") @db.Uuid
+  jobId          String?      @map("job_id") @db.Uuid
+  reason         String
+  description    String?
+  status         ReportStatus @default(OPEN)
+  adminNotes     String?      @map("admin_notes")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  reporter     User  @relation("ReportedBy", fields: [reportedBy], references: [id])
+  reportedUser User  @relation("ReportedUser", fields: [reportedUserId], references: [id])
+  job          Job?  @relation(fields: [jobId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("reports")
+}
+
+// ─────────────────────────── NOTIFICATIONS ───────────────────────────
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  type      NotificationType
+  title     String
+  message   String
+  link      String?
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, isRead, createdAt])
+  @@map("notifications")
+}

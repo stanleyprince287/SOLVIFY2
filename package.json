@@ -1,0 +1,16 @@
+{
+  "name": "solvify",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "db:up": "docker compose up -d db",
+    "db:down": "docker compose down",
+    "api:dev": "pnpm --filter @solvify/api dev",
+    "api:test": "pnpm --filter @solvify/api test",
+    "api:typecheck": "pnpm --filter @solvify/api typecheck",
+    "db:migrate": "pnpm --filter @solvify/api db:migrate",
+    "db:generate": "pnpm --filter @solvify/api db:generate",
+    "seed": "pnpm --filter @solvify/api seed"
+  }
+}

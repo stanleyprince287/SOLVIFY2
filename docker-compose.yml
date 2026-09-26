@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: solvify
+      POSTGRES_PASSWORD: solvify
+      POSTGRES_DB: solvify
+    ports: ["5432:5432"]
+    volumes: ["solvify_pg:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U solvify"]
+      interval: 5s
+      retries: 10
+volumes:
+  solvify_pg:
